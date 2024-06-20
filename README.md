@@ -1,14 +1,14 @@
-# CAPM
-In this project you will find an implementation of the Capital Asset Pricing Model in R of a equally weighted portfolio of three Moroccan listed companies.
+# Capital Asset Pricing Model
+In this project you will find an implementation of the Capital Asset Pricing Model in R of an equally weighted portfolio of three Moroccan listed companies.
 # Outline of the project 
 The project consists of :
-- CAPM implementation
-- Maket model implemenation
-- Rolling window regression
+- CAPM implementation.
+- Maket model implemenation.
+- Rolling window regression.
 
-# The projects file
-- *CAPM.rmd* : contains the code for the project
-- *Portfolio.R* : the file where we constructed our equally weighted portfolio
+# The project files
+- *CAPM.rmd* : contains the code for the project.
+- *Portfolio.R* : the file where we constructed our equally weighted portfolio.
 
 # The data sets used 
 The data sets used in this project are :
