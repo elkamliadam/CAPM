@@ -1,0 +1,332 @@
+---
+title: "Capital Asset Pricing model"
+author: "EL KAMLI Adam"
+output:
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+    highlight: pygments
+    theme: united
+    numbere_sections: yes
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse) #Data analytics
+library(xts) #Xts objects (xtensible time series)
+library(quantmod)#Quantitative function
+library(readxl)#Read excel files
+library(zoo) #Zoo objects(time series)
+
+```
+
+# Introduction
+
+Factor models are used in many financial applications, such as identifying the determinants of a security's return as well as in cost of capital calculations. Factors help explain the variation in a security's return. The simplest factor model is one based on a single factor.
+
+The most popular of these models is the Capital Asset Pricing Model (CAPM). In the CAPM, only the sensitivity of the security's return to the market portfolio's return matters.
+
+In reality the CAPM does not preform well in empirical testing, and one of the reasons is the difficulty to use a \*real market portfolio\*.
+
+Thus in empirical studies, we use a more simple one single factor know in some literature as the \*market model\* that resembles the CAPM model but with no imposition on what kind of market proxy to use, and thus in such model we can use in broad-based market index.
+
+# C.A.P.M
+
+The value of a company can be seen as the seen as the present value of dividend payments that the shareholders except to receive from holding the stock.
+
+Since the dividend are expected to arrive at some future dates, we need to calculate the discount rate at which we will discount those streams.
+
+That risk-adjusted rate is given by the CAPM model as :
+
+$$
+r_i = r_f + \beta_i(r_m - r_f)
+$$
+
+where :
+
+-   $r_i$ the risk adjusted rate.
+
+-   $r_f$ the risk free rate.
+
+-   $\beta_i$ the beta which measures the sensitivty of the asset $i$ to the overall market.
+
+-   $r_m$ return on the market proxy.
+
+## CAPM regression
+
+In empirical studies however this equation tales another form :
+
+$$
+r_i - r_f = \alpha+\beta_i(r_f-r_m)
+$$
+
+Three parameters interfere in this regression :
+
+1.  The length of the estimation period
+2.  The frequency of the returns data
+3.  The risk-free rate used
+
+In this project we are gonna take 36 months returns rate and the Morocco 3-Month Bond Yield as the risk free rate of return.
+
+```{r}
+port <- read.csv("Portfolio(monthly).csv")
+head(port, n=2)
+tail(port, n=2)
+
+```
+
+```{r}
+#we converte date to it's original format
+port$date <- as.yearmon(port$date, "%b %Y")
+port <- as.data.frame(port)
+head(port)
+
+```
+
+Next we import the MASI (Moroccan All Shares Index) which is the moroccan market proxy).
+
+```{r}
+MASI <- read.csv("Moroccan All Shares - Données Historiques.csv")
+
+masi <- MASI[,c(1,2,3,4,5)]
+masi$Date <- as.Date(masi$Date, format = "%d/%m/%Y")
+head(masi)
+
+
+```
+
+```{r}
+#As we can see the numerical values in this data have a peculiar form 
+clean_transform <- function(x){
+    x <- gsub(",", '.', x)
+    x <- gsub("\\.", "", x)
+    return(as.numeric(x))
+}
+clean_and_convert <- function(x) {
+  x <- gsub("[^0-9.-]", "", x)  
+  as.numeric(x)
+}
+
+#We apply this function to all the columns
+masi[,-1] <- lapply(masi[,-1], clean_transform)
+names(masi) <- paste(c("date", "mrkt.Close", "mrkt.Open", "mrkt.High", "mrkt.Low"))
+masi <- masi[,c(1,3,4,5,2)]
+head(masi)
+
+```
+
+```{r}
+#We convert the data to xts
+masi <- as.xts(masi[,-1], order.by = masi$date)
+masi.monthly <- to.monthly(masi)
+masi.monthly <- masi.monthly[,4]
+head(masi.monthly)
+masi.ret <- Delt(masi.monthly$masi.Close)
+names(masi.ret) <- paste(c("mrkt.ret"))
+masi.ret <- masi.ret[-1,]
+head(masi.ret)
+
+```
+
+```{r}
+#For compatibility with the rest of the data we are gonna convert masi.ret to a dataframe
+market.df <- as.data.frame(masi.ret)
+head(market.df)
+```
+
+Now that we have our market proxy all set and done, we are gonna import our risk free rates
+
+```{r}
+rf <- read.csv("Morocco 3-Month Bond Yield Historical Data.csv")
+head(rf)
+
+```
+
+```{r}
+rf <- rf[, c(1,2)]
+rf$Date <- as.Date(rf$Date,format = "%m/%d/%Y")
+rf$Price <- clean_and_convert(rf$Price)
+head(rf)
+```
+
+```{r}
+
+rf <- as.xts(rf, order.by = rf$Date)
+rf <- rf[,-1]
+rf <- xts(apply(rf, 2, as.numeric), order.by = index(rf))
+rf.monthly <- to.monthly(rf)
+
+```
+
+Now we should convert the annualized yield of each month, to a monthly yield using the following formula :
+
+$$
+rf_{monthly} = \left(1+\frac{rf_{annualized}}{100}\right)^{1/12}-1
+$$
+
+```{r}
+rf.monthly<-(1+rf.monthly[,1]/100)^(1/12)-1
+rf.monthly <- rf.monthly[-1,]
+head(rf.monthly)
+rf
+```
+
+Now we combine all the above datasets to one dataframe
+
+```{r}
+data <- cbind(market.df,data.frame(rf.monthly), port$port.ret)
+names(data) <- paste(c("mkt.ret", "rf", "port.ret"))
+head(data)
+```
+
+No we calculate the following :
+
+-   $r_i - r_f$ : excess firm return.
+-   $r_m - r_f$ : excess market return.
+
+```{r}
+data$exret <- data$port.ret-data$rf
+data$exmkt <- data$mkt.ret-data$rf
+head(data)
+```
+
+Now we run our regreesion
+
+```{r}
+capm <- lm(exret~exmkt, data = data)
+summary(capm)
+```
+
+We find that :
+
+$$
+r_i-r_f = 0.016833+0.631525(r_m-r_f)
+$$
+
+```{r, message=F}
+ggplot(data, aes(x = exret, y = exmkt))+
+  geom_point(color = 'blue', size = 2)+
+    geom_smooth(method = "lm", color = 'red')+
+    labs(title = "Scatter plot of the exret Vs. exmkt market return with regression line",
+         x = "excedent return",
+         y = "edxcedent market return")+
+  theme_minimal()
+```
+
+We can see from this graph why the CAPM is not the best fitted for empirical studies, however it can gives us some good insights.\
+
+## Coefficient interpretation
+
+### Alpha :
+
+When putting our money into a fund we want to know if the fund manager has a plus value or does he just invest in the index .
+
+To do so we look at his performance compared to a benchmark, by looking at his *Alpha* since the performance of the market is measured in the *Beta* then any excess value can be attribute to the manager.
+
+If the *Alpha* is statistically significant then it can interpreted as the positive or negative value of the manager, in our example, the manager has recorder an incremental return of **16%** and it's statistically significant to *5%* level which is the confidence level agreed upon.
+
+### Beta :
+
+The *Beta* on the other hand measures the sensitivity of the portfolio to the overall market movement.
+
+In financial term we say that *Beta* measures the portfolio's **systematic risk** also called **market risk**, it's the portion of the risk that cannot be diversified.
+
+In our example we have $\beta = 0.631525$ which means that if the market goes up by *1%* our portfolio will go up by *0.63%* and if it goes down by *1%* then the portfolio will go down by *0.63%*.
+
+# Market model
+
+Unlike the CAPM that requires *true* market portfolio, the market model uses the market proxy such as :
+
+$$
+r_i = \alpha +\beta r_m
+$$
+
+```{r}
+market_model <- lm(port.ret~mkt.ret, data)
+summary(market_model)
+
+```
+
+we can observe that the *beta* here is very close to that of the CAPM, and the interpretation are the same except that this time we compare it with the movement of the MASI directly.
+
+```{r}
+ggplot(data, aes( x = port.ret, y = mkt.ret))+
+  geom_point(color = 'blue', size = 2)+
+  geom_smooth(method = "lm", color = 'red')+
+  labs ( title = "Scatter plot of port.ret Vs mkt.ret with a regression line fitted", 
+         x = "Portfolio returns",
+         y = "Market proxy returns")+
+  theme_minimal()
+```
+
+We can see by comparing the two regression graphs that the slopes are indeed very similar.
+
+# Rolling windows
+
+As mentioned earlier the results of the regression on depends on the time window used, we give here an example of how the window frame can affect the values of *Alpha* and *Beta*.
+
+```{r}
+# We import the historical stock prices of LABEL-VIE
+label <- read_excel('Label_vie.xlsx')
+label$Séance <- as.Date(label$Séance, format = "%d/%m/%Y") #Format the date
+label <- label[, c(1, 4, 5, 6, 7, 9, 12)] #Select the colomns that interest us
+label[,-1] <- lapply(label[,-1], clean_and_convert) #We clean the data
+label <- as.xts(label[, -1], order.by = label$Séance)#Convert to an xts object
+colnames(label) <- c("LABEL.Open", "LABEL.Close", "LABEL.High", "LABEL.Low", "LABEL.Volume", "LABEL.Adjusted") #Standardise the names 
+label <- label[, c(1, 3, 4, 2, 5, 6)]
+head(label)
+
+```
+
+```{r}
+# Now we calculate the market and LABEL vie logaithmic returns
+rets <- diff(log(label$LABEL.Adjusted))
+rets$masi <- diff(log(masi$mrkt.Close))
+names(rets) <- paste(c("LABEL.ret", "MARKET.ret"))
+rets <- na.omit(rets)
+head(rets)
+
+```
+
+Now we run a regression over a financial year (252 days)
+
+```{r}
+reg <- function(X){
+  roll.reg = lm(LABEL.ret ~MARKET.ret, data = as.data.frame(X))
+  return(roll.reg$coef)
+}
+coeff <- rollapply(rets,
+                   width = 252,
+                   FUN = reg,
+                   by.column = F)
+coeff <- na.omit(coeff)
+names(coeff) <- paste(c("Alpha", "Beta"))
+head(coeff)
+```
+
+Now we plot our data to have a better idea on the evolution of our two coefficients.
+
+```{r}
+
+plot(x = index(coeff),
+       y = coeff$Alpha,
+       xlab = 'Date',
+     ylab = 'Alpha',
+     type = 'l',
+     col = 'red',
+     main = 'Label Vie. Alpha using 252-day rolling window'
+     )
+plot(x = index(coeff),
+     y = coeff$Beta,
+     xlab = "Date", 
+     ylab = 'Beta',
+     type = 'l',
+     col = 'blue',
+     main = 'Label Vie. Beta using 252-day rolling window')
+
+```
+
+As we can notice the Label Vie *Alpha* seems to fluctuate around very small values while the *Beta* takes on much bigger variations.
